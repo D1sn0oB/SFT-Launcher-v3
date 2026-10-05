@@ -1,0 +1,68 @@
+<Page x:Class="SFTLauncher.Pages.HomePage"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="0,0,0,24">
+            
+            <!-- 欢迎区域 -->
+            <Border Style="{StaticResource CardStyle}" Padding="32,24">
+                <StackPanel>
+                    <TextBlock Text="欢迎回来，玩家！" Style="{StaticResource LabelTitle}" Margin="0,0,0,8"/>
+                    <TextBlock Text="今天想玩点什么？" Style="{StaticResource LabelSecondary}"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- 快速操作 - 使用垂直布局，增加间距 -->
+            <StackPanel Margin="0,40,0,0">
+                
+                <!-- 左侧：实例列表 -->
+                <Border Style="{StaticResource CardStyle}" Padding="24" Margin="0,0,0,24">
+                    <StackPanel>
+                        <TextBlock Text="我的实例" Style="{StaticResource LabelHeading}" Margin="0,0,0,16"/>
+                        
+                        <!-- 空状态提示 -->
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="📦" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,16"/>
+                            <TextBlock Text="还没有实例" Style="{StaticResource LabelHeading}" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                            <TextBlock Text="点击" Style="{StaticResource LabelSecondary}" HorizontalAlignment="Center"/>
+                            <TextBlock Text="▶ 新建实例" Foreground="{StaticResource AccentBrush}"
+                                      HorizontalAlignment="Center" FontWeight="600"/>
+                            <TextBlock Text="来开始你的冒险！" Style="{StaticResource LabelSecondary}" HorizontalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <!-- 右侧：统计信息 -->
+                <Border Style="{StaticResource CardStyle}" Padding="24">
+                    <StackPanel>
+                        <TextBlock Text="统计" Style="{StaticResource LabelHeading}" Margin="0,0,0,20"/>
+                        
+                        <Border Background="#F9FAFB" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="Modrinth" Style="{StaticResource LabelTitle}" Foreground="{StaticResource AccentBrush}"/>
+                                <TextBlock Text="资源库已连接" Style="{StaticResource LabelMuted}"/>
+                            </StackPanel>
+                        </Border>
+                        
+                        <Border Background="#F9FAFB" CornerRadius="12" Padding="16" Margin="0,0,0,16">
+                            <StackPanel>
+                                <TextBlock Text="就绪" Style="{StaticResource LabelTitle}" Foreground="{StaticResource SuccessBrush}"/>
+                                <TextBlock Text="系统状态正常" Style="{StaticResource LabelMuted}"/>
+                            </StackPanel>
+                        </Border>
+                        
+                        <Border Background="#F9FAFB" CornerRadius="12" Padding="16">
+                            <StackPanel>
+                                <TextBlock Text="SFT Launcher v3" Style="{StaticResource LabelTitle}" Foreground="{StaticResource TextSecondaryBrush}"/>
+                                <TextBlock Text="极简中性配色" Style="{StaticResource LabelMuted}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+                
+            </StackPanel>
+            
+        </StackPanel>
+    </ScrollViewer>
+</Page>
