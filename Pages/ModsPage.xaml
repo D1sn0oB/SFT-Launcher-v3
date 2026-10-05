@@ -4,35 +4,168 @@
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Margin="0,0,0,24">
-            
-            <!-- Search bar -->
-            <Grid Margin="0,0,0,20">
+
+            <!-- 标题 -->
+            <TextBlock Text="Modrinth 资源库" Foreground="#111827" FontSize="24" FontWeight="700" Margin="0,0,0,20"/>
+
+            <!-- 搜索栏 -->
+            <Grid Margin="0,0,0,12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                
+
                 <TextBox x:Name="SearchBox"
                          Background="#F9FAFB" Foreground="#111827"
                          BorderThickness="1" BorderBrush="#E5E7EB"
                          Padding="16,14" FontSize="15"
                          Height="50" Margin="0,0,12,0"
-                         Text="输入模组名称搜索..."/>
-                
-                <Button Grid.Column="1" Style="{StaticResource PrimaryButton}" 
+                         Text="输入名称搜索 Modrinth 资源..."/>
+
+                <Button Grid.Column="1" x:Name="SearchButton" Style="{StaticResource PrimaryButton}"
                         Height="50" Width="90" Margin="12,0,0,0"
                         Content="搜索" Click="SearchButton_Click"/>
             </Grid>
-            
+
+            <!-- 筛选栏 -->
+            <Grid Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <ComboBox Grid.Column="0" x:Name="TypeFilter" Height="40" MinWidth="110"
+                          FontSize="13" VerticalContentAlignment="Center">
+                    <ComboBoxItem Content="Mod" Tag="mod" IsSelected="True"/>
+                    <ComboBoxItem Content="整合包" Tag="modpack"/>
+                    <ComboBoxItem Content="光影包" Tag="shader"/>
+                    <ComboBoxItem Content="材质包" Tag="resourcepack"/>
+                </ComboBox>
+
+                <ComboBox Grid.Column="2" x:Name="GameVersionFilter" Height="40" MinWidth="130"
+                          FontSize="13" VerticalContentAlignment="Center"/>
+
+                <ComboBox Grid.Column="4" x:Name="SortFilter" Height="40" MinWidth="110"
+                          FontSize="13" VerticalContentAlignment="Center">
+                    <ComboBoxItem Content="相关度" Tag="relevance" IsSelected="True"/>
+                    <ComboBoxItem Content="下载量" Tag="downloads"/>
+                    <ComboBoxItem Content="更新时间" Tag="updated"/>
+                    <ComboBoxItem Content="关注数" Tag="follows"/>
+                </ComboBox>
+            </Grid>
+
             <!-- 状态提示 -->
-            <TextBlock x:Name="StatusText" 
-                       Foreground="#9CA3AF" FontSize="13" 
+            <TextBlock x:Name="StatusText"
+                       Foreground="#9CA3AF" FontSize="13"
                        Margin="0,0,0,12"
                        Text="输入关键词搜索 Modrinth 资源库"/>
-            
-            <!-- 模组列表 -->
+
+            <!-- 下载面板（点击列表项"下载"后显示） -->
+            <Border x:Name="DownloadPanel" Style="{StaticResource CardStyle}"
+                    Padding="20" Margin="0,0,0,16" Visibility="Collapsed">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="DownloadTitle" Text="资源名称" FontSize="16" FontWeight="600"
+                                   Foreground="#111827" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+
+                        <Button Grid.Column="1" Content="✕" Width="28" Height="28"
+                                Background="Transparent" BorderThickness="0" Cursor="Hand"
+                                Foreground="#9CA3AF" FontSize="12" Click="CloseDownloadPanel_Click"/>
+                    </Grid>
+
+                    <!-- 过滤条件：游戏版本 / 加载器 -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="游戏版本:" Foreground="#4B5563" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Grid.Column="1" x:Name="DownloadGameVersionCombo" Height="38" Margin="0,0,12,0"
+                                  FontSize="13" VerticalContentAlignment="Center"
+                                  SelectionChanged="DownloadFilter_Changed"/>
+
+                        <TextBlock Grid.Column="2" Text="加载器:" Foreground="#4B5563" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Grid.Column="3" x:Name="DownloadLoaderCombo" Height="38"
+                                  FontSize="13" VerticalContentAlignment="Center"
+                                  SelectionChanged="DownloadFilter_Changed"/>
+                    </Grid>
+
+                    <!-- 资源版本 -->
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="资源版本:" Foreground="#4B5563" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <ComboBox Grid.Column="1" x:Name="DownloadVersionCombo" Height="38"
+                                  FontSize="13" VerticalContentAlignment="Center"/>
+                    </Grid>
+
+                    <!-- 保存目录 -->
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Column="0" Text="保存目录:" Foreground="#4B5563" FontSize="13"
+                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBox Grid.Column="1" x:Name="SavePathBox"
+                                 Background="#F9FAFB" Foreground="#111827"
+                                 BorderThickness="1" BorderBrush="#E5E7EB"
+                                 Height="38" Margin="0,0,8,0" FontSize="13"
+                                 VerticalContentAlignment="Center"/>
+                        <Button Grid.Column="2" Content="浏览" Style="{StaticResource GhostButton}"
+                                Height="38" Padding="14,0" Click="BrowseSavePath_Click"/>
+                    </Grid>
+
+                    <!-- 进度与操作 -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                            <ProgressBar x:Name="DownloadProgressBar" Height="6"
+                                         Value="0" Maximum="100" Foreground="#A78BFA" Background="#E5E7EB"
+                                         Visibility="Collapsed"/>
+                            <TextBlock x:Name="DownloadStatusText" Text="请选择版本与保存目录"
+                                       Foreground="#9CA3AF" FontSize="12" Margin="0,6,0,0"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button x:Name="CancelDownloadButton" Style="{StaticResource GhostButton}"
+                                    Height="38" Padding="16,0" Content="取消" Margin="0,0,10,0"
+                                    Visibility="Collapsed" Click="CancelDownload_Click"/>
+                            <Button x:Name="StartDownloadButton" Style="{StaticResource AccentButton}"
+                                    Height="38" Padding="20,0" Content="⬇ 下载" Click="StartDownload_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 资源列表 -->
             <StackPanel x:Name="ModsList"/>
-            
+
         </StackPanel>
     </ScrollViewer>
 </Page>
