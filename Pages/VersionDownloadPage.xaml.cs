@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net.Http;
+using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -12,27 +13,20 @@ namespace SFTLauncher.Pages
 {
     public partial class VersionDownloadPage : Page
     {
-        private static readonly HttpClient client = new HttpClient();
+        private readonly Utils.MinecraftVersionInstaller installer = new();
         private bool isDownloading = false;
+        private CancellationTokenSource? downloadCts = null;
         private List<DownloadRecord> downloadHistory = new List<DownloadRecord>();
         private bool isFirstDownload = true;
-        private List<string> availableVersions = new List<string>();
+        private List<Utils.MinecraftVersionEntry> availableVersions = new List<Utils.MinecraftVersionEntry>();
 
         public VersionDownloadPage()
         {
             InitializeComponent();
-            try
-            {
-                LoadVersionsFromApi();
-                InstallPathBox.Text = "";
-                PathStatus.Text = "请先选择安装目录";
-                PathStatus.Foreground = (Brush)FindResource("TextMutedBrush");
-            }
-            catch (Exception ex)
-            {
-                StatusText.Text = "Init failed: " + ex.Message;
-                StatusText.Foreground = (Brush)FindResource("ErrorBrush");
-            }
+            LoadVersionsFromApi();
+            InstallPathBox.Text = Utils.MinecraftLauncher.DetectMinecraftDirectory()
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".minecraft");
+            CheckMinecraftDirectory();
         }
 
         private async void LoadVersionsFromApi()
@@ -40,40 +34,17 @@ namespace SFTLauncher.Pages
             try
             {
                 UpdateStatus("Loading version list...", "#A78BFA");
-                
-                var manifestResponse = await client.GetAsync("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json");
-                manifestResponse.EnsureSuccessStatusCode();
-                string manifestJson = await manifestResponse.Content.ReadAsStringAsync();
-                
-                using var manifestDoc = JsonDocument.Parse(manifestJson);
-                var manifest = manifestDoc.RootElement;
-                
-                var versions = manifest.GetProperty("versions");
-                availableVersions.Clear();
-                
-                foreach (var version in versions.EnumerateArray())
-                {
-                    string type = version.GetProperty("type").GetString();
-                    if (type == "release")
-                    {
-                        string id = version.GetProperty("id").GetString();
-                        if (id.StartsWith("1.") || id == "26.3" || id == "26.2" || id == "26.1")
-                        {
-                            availableVersions.Add(id);
-                        }
-                    }
-                }
-                
-                availableVersions.Sort((a, b) => b.CompareTo(a));
-                if (availableVersions.Count > 50)
-                {
-                    availableVersions = availableVersions.GetRange(0, 50);
-                }
-                
+
+                availableVersions = await Utils.MinecraftVersionInstaller.GetVersionsAsync();
                 VersionComboBox.ItemsSource = availableVersions;
-                if (VersionComboBox.Items.Count > 0)
+
+                // 默认选中最新正式版
+                var latestRelease = availableVersions.FirstOrDefault(v => v.IsLatestRelease);
+                if (latestRelease != null)
+                    VersionComboBox.SelectedItem = latestRelease;
+                else if (VersionComboBox.Items.Count > 0)
                     VersionComboBox.SelectedIndex = 0;
-                
+
                 VersionStatus.Text = "\u2713";
                 VersionStatus.Foreground = (Brush)FindResource("SuccessBrush");
                 UpdateStatus("Ready", "#34D399");
@@ -83,13 +54,19 @@ namespace SFTLauncher.Pages
                 VersionStatus.Text = "\u2717";
                 VersionStatus.Foreground = (Brush)FindResource("ErrorBrush");
                 UpdateStatus("Failed to load versions: " + ex.Message, "#F87171");
-                
+
+                // 网络失败时回退到内置常用版本列表（仅展示，下载需重新联网加载）
                 var fallbackVersions = new[] {
                     "1.20.4", "1.20.3", "1.20.2", "1.20.1", "1.20",
                     "1.19.4", "1.19.3", "1.19.2", "1.19.1", "1.19",
                     "1.18.2", "1.18.1", "1.18",
                     "1.17.1", "1.16.5", "1.12.2"
-                };
+                }.Select(id => new Utils.MinecraftVersionEntry
+                {
+                    Id = id,
+                    Type = "release",
+                    Url = ""
+                }).ToList();
                 VersionComboBox.ItemsSource = fallbackVersions;
                 if (VersionComboBox.Items.Count > 0)
                     VersionComboBox.SelectedIndex = 0;
@@ -124,11 +101,10 @@ namespace SFTLauncher.Pages
         {
             try
             {
-                // 使用 WPF 的 OpenDialog 选择文件夹
                 var dialog = new Microsoft.Win32.OpenFileDialog();
                 dialog.Title = "选择 Minecraft 安装目录";
                 dialog.Filter = "文件夹|*.*";
-                
+
                 if (dialog.ShowDialog() == true)
                 {
                     string selectedPath = Path.GetDirectoryName(dialog.FileName);
@@ -148,13 +124,27 @@ namespace SFTLauncher.Pages
 
         private async void DownloadButton_Click(object sender, RoutedEventArgs e)
         {
+            if (isDownloading) return;
+
+            if (!(VersionComboBox.SelectedItem is Utils.MinecraftVersionEntry version))
+            {
+                MessageBox.Show("请先选择要下载的版本！", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(version.Url))
+            {
+                MessageBox.Show("版本列表未加载完整，无法获取该版本的下载地址。\n请检查网络后重新打开本页面。",
+                    "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
             if (string.IsNullOrEmpty(InstallPathBox.Text))
             {
                 MessageBox.Show("请先选择安装目录！", "提示", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            if (isDownloading) return;
             var downloadBtn = sender as Button;
             if (downloadBtn == null) return;
 
@@ -163,19 +153,29 @@ namespace SFTLauncher.Pages
             CancelButton.Visibility = Visibility.Visible;
             UpdateStatus("Initializing...", "#A78BFA");
             ProgressBar.Visibility = Visibility.Visible;
+            ProgressBar.Value = 0;
             ProgressText.Text = "0%";
+
+            string minecraftDir = InstallPathBox.Text;
+            downloadCts = new CancellationTokenSource();
+
+            var progress = new Progress<Utils.MinecraftInstallProgress>(p =>
+            {
+                ProgressBar.Value = p.Percentage;
+                ProgressText.Text = p.Percentage.ToString("F0") + "%";
+                UpdateStatus($"[{p.StageName}] {p.Detail}", "#A78BFA");
+                InfoText.Text = p.TotalFiles > 0
+                    ? $"文件 {p.CompletedFiles}/{p.TotalFiles} · {p.SpeedDisplay}"
+                    : p.SpeedDisplay;
+            });
 
             try
             {
-                string version = VersionComboBox.Text ?? "1.20.4";
-                string minecraftDir = InstallPathBox.Text;
-
                 if (!Directory.Exists(minecraftDir))
                 {
-                    UpdateStatus("Creating Minecraft directories...", "#A78BFA");
                     EnsureDirectoryExists(minecraftDir);
                 }
-                
+
                 string[] subDirs = { "versions", "libraries", "assets", "resourcepacks", "saves", "mods", "config" };
                 foreach (string subDir in subDirs)
                 {
@@ -185,11 +185,6 @@ namespace SFTLauncher.Pages
                         Directory.CreateDirectory(fullPath);
                     }
                 }
-                string versionsDir = Path.Combine(minecraftDir, "versions", version);
-                if (!Directory.Exists(versionsDir))
-                {
-                    Directory.CreateDirectory(versionsDir);
-                }
 
                 if (isFirstDownload)
                 {
@@ -197,52 +192,29 @@ namespace SFTLauncher.Pages
                     isFirstDownload = false;
                 }
 
-                UpdateStatus("Fetching version info...", "#A78BFA");
-                string manifestUrl = $"https://launchermeta.mojang.com/mc/game/{version}/version_manifest_v2.json";
-                var manifestResponse = await client.GetAsync(manifestUrl);
-                manifestResponse.EnsureSuccessStatusCode();
-                string manifestJson = await manifestResponse.Content.ReadAsStringAsync();
+                await installer.InstallAsync(version.Id, version.Url, minecraftDir, progress, downloadCts.Token);
 
-                using var manifestDoc = JsonDocument.Parse(manifestJson);
-                var manifest = manifestDoc.RootElement;
-
-                string jarUrl = manifest.GetProperty("downloads")
-                    .GetProperty("client")
-                    .GetProperty("url")
-                    .GetString();
-                string jarPath = Path.Combine(minecraftDir, "versions", version, version + ".jar");
-
-                UpdateStatus($"Downloading Minecraft {version}...", "#A78BFA");
-                await DownloadFile(jarUrl, jarPath, UpdateProgress);
-
-                if (manifest.TryGetProperty("assetIndex", out var assetIndex))
-                {
-                    string assetsIndex = assetIndex.GetProperty("url").GetString();
-                    string assetsDir = Path.Combine(minecraftDir, "assets", "indexes");
-                    if (!Directory.Exists(assetsDir))
-                    {
-                        Directory.CreateDirectory(assetsDir);
-                    }
-                    string assetsId = assetIndex.GetProperty("id").GetString();
-                    string assetsIndexPath = Path.Combine(assetsDir, assetsId + ".json");
-
-                    if (!File.Exists(assetsIndexPath))
-                    {
-                        UpdateStatus("Downloading asset index...", "#A78BFA");
-                        var assetsResponse = await client.GetAsync(assetsIndex);
-                        assetsResponse.EnsureSuccessStatusCode();
-                        await File.WriteAllBytesAsync(assetsIndexPath, await assetsResponse.Content.ReadAsByteArrayAsync());
-                    }
-                }
-
-                downloadHistory.Insert(0, new DownloadRecord { Version = version, Path = minecraftDir, Time = DateTime.Now, Success = true });
+                downloadHistory.Insert(0, new DownloadRecord { Version = version.Id, Path = minecraftDir, Time = DateTime.Now, Success = true });
                 UpdateDownloadHistory();
                 UpdateStatus("\u2713 Download complete!", "#34D399");
                 VersionStatus.Text = "\u2713";
                 VersionStatus.Foreground = (Brush)FindResource("SuccessBrush");
 
-                MessageBox.Show($"Minecraft {version} downloaded!\n\nLocation: {minecraftDir}",
+                MessageBox.Show($"Minecraft {version.Id} downloaded!\n\nLocation: {minecraftDir}",
                     "Done", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (OperationCanceledException)
+            {
+                UpdateStatus("下载已取消", "#FBBF24");
+                downloadHistory.Insert(0, new DownloadRecord
+                {
+                    Version = version.Id,
+                    Path = minecraftDir,
+                    Time = DateTime.Now,
+                    Success = false,
+                    Error = "已取消"
+                });
+                UpdateDownloadHistory();
             }
             catch (Exception ex)
             {
@@ -251,8 +223,8 @@ namespace SFTLauncher.Pages
                 VersionStatus.Foreground = (Brush)FindResource("ErrorBrush");
                 downloadHistory.Insert(0, new DownloadRecord
                 {
-                    Version = VersionComboBox.Text ?? "unknown",
-                    Path = InstallPathBox.Text,
+                    Version = version.Id,
+                    Path = minecraftDir,
                     Time = DateTime.Now,
                     Success = false,
                     Error = ex.Message
@@ -264,18 +236,11 @@ namespace SFTLauncher.Pages
             finally
             {
                 isDownloading = false;
+                downloadCts?.Dispose();
+                downloadCts = null;
                 downloadBtn.IsEnabled = true;
                 CancelButton.Visibility = Visibility.Collapsed;
             }
-        }
-
-        private void UpdateProgress(double progress)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                ProgressBar.Value = progress;
-                ProgressText.Text = progress.ToString("F0") + "%";
-            });
         }
 
         private void UpdateStatus(string text, string colorKey)
@@ -295,44 +260,17 @@ namespace SFTLauncher.Pages
             });
         }
 
-        private async Task DownloadFile(string url, string savePath, Action<double> progressCallback)
-        {
-            string dir = Path.GetDirectoryName(savePath);
-            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            {
-                Directory.CreateDirectory(dir);
-            }
-
-            using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            response.EnsureSuccessStatusCode();
-            var totalBytes = response.Content.Headers.ContentLength ?? 200_000_000;
-            var buffer = new byte[8192];
-            long totalRead = 0;
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var fileStream = new FileStream(savePath, FileMode.Create, FileAccess.Write, FileShare.None);
-            {
-                int bytesRead;
-                while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                {
-                    await fileStream.WriteAsync(buffer, 0, bytesRead);
-                    totalRead += bytesRead;
-                    double progress = totalBytes > 0 ? (double)totalRead / totalBytes * 100 : 0;
-                    progressCallback?.Invoke(progress);
-                }
-            }
-        }
-
         private void EnsureDirectoryExists(string path)
         {
             if (string.IsNullOrEmpty(path)) return;
             if (Directory.Exists(path)) return;
-            
+
             string parentDir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(parentDir) && !Directory.Exists(parentDir))
             {
                 EnsureDirectoryExists(parentDir);
             }
-            
+
             Directory.CreateDirectory(path);
         }
 
@@ -409,10 +347,7 @@ namespace SFTLauncher.Pages
 
         private void CancelButton_Click(object sender, RoutedEventArgs e)
         {
-            isDownloading = false;
-            DownloadButton.IsEnabled = true;
-            CancelButton.Visibility = Visibility.Collapsed;
-            UpdateStatus("下载已取消", "#FBBF24");
+            downloadCts?.Cancel();
         }
 
         private class DownloadRecord
